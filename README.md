@@ -92,11 +92,6 @@ ai-notes-app/
 
 ---
 
-## 简历推荐描述（示例）
-> 独立开发“AI智能笔记”全栈应用，基于React+FastAPI+SQLAlchemy，集成transformers等AI能力，实现文本摘要、关键词提取、语音转文字等功能。支持多用户、多标签、多文件夹管理，具备智能搜索、自动标签等亮点。前后端分离，接口设计规范，UI美观，体验流畅。项目涵盖全栈开发、AI应用、数据库建模、工程化实践等能力。
-
----
-
 ## 致谢与参考
 - [FastAPI](https://fastapi.tiangolo.com/)
 - [React](https://react.dev/)
