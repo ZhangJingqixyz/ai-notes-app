@@ -10,11 +10,11 @@ from typing import List, Optional
 from sqlalchemy import or_
 import jieba
 from difflib import SequenceMatcher
-import librosa
-import soundfile as sf
-import numpy as np
-from transformers import pipeline
-import pytz
+# import librosa
+# import soundfile as sf
+# import numpy as np
+# from transformers import pipeline
+# import pytz
 
 app = FastAPI()
 
@@ -39,10 +39,15 @@ def get_db():
     finally:
         db.close()
 
-# 初始化AI模型
-summarizer = None
-kw_model = None
-asr_pipeline = None
+# 移除全局import和全局模型加载
+# import librosa
+# import soundfile as sf
+# import numpy as np
+# from transformers import pipeline
+# import pytz
+# summarizer = None
+# kw_model = None
+# asr_pipeline = None
 
 # Pydantic模型
 class UserCreate(BaseModel):
@@ -231,22 +236,28 @@ def update_note(note_id: int, note: NoteUpdate, db: Session = Depends(get_db)):
 # AI摘要
 @app.post("/summarize/")
 def summarize_note(req: ContentRequest):
+    # 延迟导入和加载summarizer
+    from transformers import pipeline
     global summarizer
-    if summarizer is None:
+    if 'summarizer' not in globals() or summarizer is None:
         summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
     content = req.content
     max_length = req.max_length
     min_length = req.min_length
+    # facebook/bart-large-cnn最大输入token约1024，保险起见按1000字符截断
     if not content or len(content) < 20:
         return {"summary": "内容太短，无需摘要"}
+    if len(content) > 1000:
+        content = content[:1000]
     summary = summarizer(content, max_length=max_length, min_length=min_length, do_sample=False)[0]['summary_text']
     return {"summary": summary}
 
 # 关键词提取
 @app.post("/extract_keywords/")
 def extract_keywords(req: ContentRequest):
+    # 延迟导入和加载KeyBERT
     global kw_model
-    if kw_model is None:
+    if 'kw_model' not in globals() or kw_model is None:
         from keybert import KeyBERT
         kw_model = KeyBERT()
     content = req.content
@@ -255,22 +266,6 @@ def extract_keywords(req: ContentRequest):
         return {"keywords": []}
     keywords = kw_model.extract_keywords(content, top_n=top_n)
     return {"keywords": [kw[0] for kw in keywords]}
-
-# 语音转文字
-@app.post("/asr/")
-async def asr(file: UploadFile = File(...)):
-    global asr_pipeline
-    if asr_pipeline is None:
-        asr_pipeline = pipeline("automatic-speech-recognition", model="facebook/wav2vec2-base-960h")
-    audio_bytes = await file.read()
-    with open("temp.wav", "wb") as f:
-        f.write(audio_bytes)
-    audio, sr = librosa.load("temp.wav", sr=16000)
-    audio = audio.astype(np.float32)
-    result = asr_pipeline(audio)
-    import os
-    os.remove("temp.wav")
-    return {"text": result["text"]}
 
 # 智能搜索
 @app.get("/search/{username}")
@@ -356,27 +351,26 @@ def get_user_tags(username: str, db: Session = Depends(get_db)):
     tags = db.query(Tag).filter(Tag.user_id == user.id).all()
     return tags
 
-# 自动为笔记生成标签
-@app.post("/notes/{note_id}/auto_tags")
-def generate_auto_tags(note_id: int, db: Session = Depends(get_db)):
+# 删除/融合原有关键词提取、自动标签API，统一为AI标签API
+@app.post("/notes/{note_id}/ai_tags")
+def generate_ai_tags(note_id: int, db: Session = Depends(get_db)):
     note = db.query(Note).filter(Note.id == note_id).first()
     if not note:
         raise HTTPException(status_code=404, detail="笔记不存在")
-    
     user = db.query(User).filter(User.id == note.user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
-    
     try:
-        keywords = kw_model.extract_keywords(note.content, top_n=3)
+        from keybert import KeyBERT
+        global kw_model
+        if 'kw_model' not in globals() or kw_model is None:
+            kw_model = KeyBERT()
+        keywords = kw_model.extract_keywords(note.content, top_n=5)
         tag_names = [kw[0] for kw in keywords]
-        
         # 清空现有标签，避免重复
         note.tags.clear()
-        
         tags = []
         for tag_name in tag_names:
-            # 检查标签是否已存在
             tag = db.query(Tag).filter(Tag.name == tag_name, Tag.user_id == user.id).first()
             if not tag:
                 tag = Tag(name=tag_name, user_id=user.id)
@@ -384,14 +378,12 @@ def generate_auto_tags(note_id: int, db: Session = Depends(get_db)):
                 db.commit()
                 db.refresh(tag)
             tags.append(tag)
-        
-        # 添加新标签
         note.tags.extend(tags)
         db.commit()
-        return {"message": "自动标签生成成功", "tags": tag_names}
+        return {"tags": tag_names}
     except Exception as e:
-        db.rollback()  # 回滚事务
-        raise HTTPException(status_code=500, detail=f"标签生成失败: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"AI标签生成失败: {str(e)}")
 
 @app.get("/")
 def read_root():

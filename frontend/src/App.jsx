@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import ReactMarkdown from "react-markdown";
 
 function App() {
   const [mode, setMode] = useState("login"); // "register" or "login"
@@ -66,6 +67,33 @@ function App() {
   const [confirmPwd, setConfirmPwd] = useState("");
   const [pwdMsg, setPwdMsg] = useState("");
   const [pwdMsgType, setPwdMsgType] = useState("");
+
+  // 1. 新增主题切换状态和逻辑
+  const [theme, setTheme] = useState('light');
+  const toggleTheme = () => setTheme(theme === 'light' ? 'dark' : 'light');
+  // 2. 新增AI标签状态
+  const [aiTags, setAiTags] = useState({}); // {noteId: [tag1, tag2, ...]}
+  // 3. logo点击创建新笔记
+  const handleLogoClick = () => {
+    setSelectedNote(null);
+    setNoteTitle('');
+    setNoteContent('');
+    setIsEditing(false);
+  };
+  // 4. 获取AI标签
+  const handleGetAiTags = async (noteId, content) => {
+    setDetailMsg('正在获取AI标签...');
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/notes/${noteId}/ai_tags`, {method: 'POST'});
+      const data = await res.json();
+      setAiTags(prev => ({...prev, [noteId]: data.tags || []}));
+      // 更新notes中对应笔记的tags
+      setNotes(notes => notes.map(n => n.id === noteId ? {...n, tags: data.tags} : n));
+      setDetailMsg('AI标签获取成功');
+    } catch {
+      setDetailMsg('AI标签获取失败');
+    }
+  };
 
   // 登录/注册
   const handleRegister = async (e) => {
@@ -205,18 +233,18 @@ function App() {
 
   // 右侧AI摘要
   const handleDetailSummarize = async () => {
-    setDetailMsg("正在生成摘要...");
+    setDetailMsg('正在生成摘要...');
     try {
-      const res = await fetch("http://127.0.0.1:8000/summarize/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const res = await fetch('http://127.0.0.1:8000/summarize/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: selectedNote.content, max_length: 200, min_length: 40 }),
       });
       const data = await res.json();
-      setDetailSummary(data.summary || "生成失败");
-      setDetailMsg("");
+      setDetailSummary(data.summary || '生成失败');
+      setDetailMsg('');
     } catch {
-      setDetailMsg("生成失败");
+      setDetailMsg('生成失败');
     }
   };
 
@@ -425,27 +453,6 @@ function App() {
     setPassword("");
     setNotes([]);
     setMsg("");
-  };
-
-  const handleASR = async () => {
-    if (!fileInputRef.current.files[0]) return;
-    const formData = new FormData();
-    formData.append("file", fileInputRef.current.files[0]);
-    setDetailMsg("正在识别语音...");
-    try {
-      const res = await fetch("http://127.0.0.1:8000/asr/", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await res.json();
-      setDetailMsg("");
-      // 直接填入内容输入框
-      setNoteContent(data.text || "");
-      setMsg("语音识别成功"); setMsgType("success");
-    } catch {
-      setDetailMsg("识别失败");
-      setMsg("语音识别失败"); setMsgType("error");
-    }
   };
 
   // 拖拽调整左侧宽度
@@ -1034,579 +1041,116 @@ function App() {
   // 登录后显示双栏布局
   if (currentUser) {
   return (
-    <>
-        <div style={{
-        minHeight: "100vh",
-        background: "#f5f6fa",
-        display: "flex"
-      }}>
-        {/* 左侧笔记列表 */}
-        <div style={{
-          width: leftWidth,
-          transition: "width 0.1s",
-          background: "#fff",
-          borderRight: "1px solid #eee",
-          padding: 24,
-          boxSizing: "border-box",
-          color: "#222",
-          minWidth: "300px", // 确保最小宽度
-          maxWidth: "600px"  // 限制最大宽度
-        }}>
-          <div style={{display: "flex", justifyContent: "space-between", alignItems: "center"}}>
-            <h2 style={{margin: 0, fontSize: 22, color: "#222"}}>我的笔记</h2>
-            <div style={{display: "flex", gap: 8}}>
-              <button 
-                onClick={() => setShowFolderModal(true)} 
-                style={{padding: "6px 12px", background: "#67c23a", color: "#fff", border: "none", borderRadius: 4}}
-              >
-                新建文件夹
-              </button>
-              <button onClick={handleLogout} style={{padding: "6px 16px", background: "#409eff", color: "#fff", border: "none", borderRadius: 4}}>退出</button>
-            </div>
-          </div>
-          {/* 左侧输入区 */}
-          <form onSubmit={handleAddNote} style={{margin: "16px 0", display: "flex", gap: 8, flexDirection: "column"}}>
-            <input
-              type="text"
-              placeholder="标题"
-              value={noteTitle}
-              onChange={(e) => setNoteTitle(e.target.value)}
-              required
-              style={{
-                padding: 8,
-                border: "1px solid #ddd",
-                borderRadius: 4,
-                color: "#222",
-                background: "#fff", // 保证白底黑字
-                outline: "none"
-              }}
-            />
-            <textarea
-              placeholder="内容"
-              value={noteContent}
-              onChange={(e) => setNoteContent(e.target.value)}
-              required
-              rows={4}
-              style={{
-                padding: 8,
-                border: "1px solid #ddd",
-                borderRadius: 4,
-                resize: "vertical",
-                color: "#222",
-                background: "#fff", // 保证白底黑字
-                outline: "none"
-              }}
-            />
-            {/* 语音转文字入口 - 确保在左侧区域内 */}
-            <div style={{
-              display: "flex", 
-              alignItems: "center", 
-              gap: 8,
-              flexWrap: "wrap", // 允许换行
-              minHeight: "40px" // 确保最小高度
-            }}>
-              <input 
-                type="file" 
-                accept=".wav" 
-                ref={fileInputRef} 
-                style={{
-                  flex: "1",
-                  minWidth: "120px",
-                  maxWidth: "200px"
-                }}
-              />
-              <button 
-                type="button" 
-                onClick={handleASR} 
-                style={{
-                  padding: "6px 12px", 
-                  background: "#67c23a", 
-                  color: "#fff", 
-                  border: "none", 
-                  borderRadius: 4,
-                  whiteSpace: "nowrap"
-                }}
-              >
-                语音转文字
-              </button>
-              <span style={{
-                color: "#aaa", 
-                fontSize: 12,
-                whiteSpace: "nowrap"
-              }}>
-                识别结果自动填入内容
-              </span>
-            </div>
-            <button type="submit" style={{padding: "8px 16px", background: "#67c23a", color: "#fff", border: "none", borderRadius: 4}}>添加</button>
-          </form>
-          
-          {/* 文件夹选择器 */}
-          <div style={{marginBottom: 16}}>
-            <div style={{display: "flex", alignItems: "center", gap: 8, marginBottom: 8}}>
-              <span style={{fontSize: 14, color: "#666"}}>文件夹:</span>
-              <select
-                value={selectedFolder?.id || ""}
-                onChange={(e) => {
-                  const folderId = e.target.value;
-                  if (folderId) {
-                    const folder = folders.find(f => f.id == folderId);
-                    setSelectedFolder(folder);
-                  } else {
-                    setSelectedFolder(null);
-                  }
-                }}
-                style={{
-                  flex: 1,
-                  padding: "6px 8px",
-                  border: "1px solid #ddd",
-                  borderRadius: 4,
-                  background: "#fff",
-                  color: "#222"
-                }}
-              >
-                <option value="">所有笔记</option>
-                {folders.map(folder => (
-                  <option key={folder.id} value={folder.id}>
-                    {folder.name}
-                  </option>
-                ))}
-              </select>
-              {selectedFolder && (
-                <button
-                  onClick={() => setSelectedFolder(null)}
-                  style={{
-                    padding: "4px 8px",
-                    background: "#f56c6c",
-                    color: "#fff",
-                    border: "none",
-                    borderRadius: 4,
-                    fontSize: 12
-                  }}
-                >
-                  清除
-                </button>
-              )}
-            </div>
-            {/* 显示当前选中的文件夹 */}
-            {selectedFolder && (
-              <div style={{
-                padding: "8px 12px",
-                background: selectedFolder.color + "20",
-                border: `1px solid ${selectedFolder.color}`,
-                borderRadius: 4,
-                fontSize: 13,
-                color: selectedFolder.color,
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center"
-              }}>
-                <span>📁 {selectedFolder.name}</span>
-                <div style={{display: "flex", gap: 4}}>
-                  <button
-                    onClick={() => {
-                      setEditingFolder(selectedFolder);
-                      setNewFolderName(selectedFolder.name);
-                      setNewFolderColor(selectedFolder.color);
-                      setShowFolderModal(true);
-                    }}
-                    style={{
-                      padding: "2px 6px",
-                      background: "none",
-                      border: "none",
-                      color: selectedFolder.color,
-                      cursor: "pointer",
-                      fontSize: 12
-                    }}
-                  >
-                    编辑
-                  </button>
-                  <button
-                    onClick={() => deleteFolder(selectedFolder.id)}
-                    style={{
-                      padding: "2px 6px",
-                      background: "none",
-                      border: "none",
-                      color: "#f56c6c",
-                      cursor: "pointer",
-                      fontSize: 12
-                    }}
-                  >
-                    删除
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-          
-          {/* 左侧搜索框 */}
-          <div style={{marginBottom: 16}}>
-            <div style={{display: "flex", gap: 8}}>
-              <input
-                type="text"
-                placeholder="搜索笔记..."
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  // 实时搜索（防抖）
-                  clearTimeout(searchTimeout.current);
-                  searchTimeout.current = setTimeout(() => {
-                    handleSearch(e.target.value);
-                  }, 300);
-                }}
-                style={{
-                  flex: 1,
-                  padding: 8,
-                  border: "1px solid #ddd",
-                  borderRadius: 4,
-                  color: "#222",
-                  background: "#fff"
-                }}
-              />
-              <button
-                onClick={() => handleSearch(searchQuery)}
-                style={{
-                  padding: "8px 12px",
-                  background: "#409eff",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: 4,
-                  cursor: "pointer"
-                }}
-              >
-                🔍
-              </button>
-              {isSearching && <span style={{color: "#409eff"}}>搜索中...</span>}
-            </div>
-            {searchResults.length > 0 && (
-              <div style={{marginTop: 8, fontSize: 12, color: "#666"}}>
-                找到 {searchResults.length} 条相关笔记
-              </div>
-            )}
-          </div>
-          <ul style={{listStyle: "none", padding: 0, margin: 0}}>
+    <div className={theme === 'dark' ? 'dark-theme' : 'light-theme'} style={{minHeight: '100vh', display: 'flex'}}>
+      {/* 左侧导航区 */}
+      <div style={{width: leftWidth, background: theme === 'dark' ? '#23272f' : '#fff', color: theme === 'dark' ? '#fff' : '#222', borderRight: '1px solid #eee', display: 'flex', flexDirection: 'column', height: '100vh', overflowY: 'auto'}}>
+        {/* logo按钮 */}
+        <div style={{padding: 24, borderBottom: '1px solid #eee', display: 'flex', alignItems: 'center', cursor: 'pointer'}} onClick={handleLogoClick}>
+          <span style={{fontWeight: 'bold', fontSize: 22}}>📝 AI Notes</span>
+        </div>
+        {/* 搜索按钮和输入框 */}
+        <div style={{padding: '16px 24px', borderBottom: '1px solid #eee'}}>
+          <input type="text" placeholder="搜索笔记..." value={searchQuery} onChange={e => { setSearchQuery(e.target.value); clearTimeout(searchTimeout.current); searchTimeout.current = setTimeout(() => { handleSearch(e.target.value); }, 300); }} style={{width: '80%', padding: 8, borderRadius: 4, border: '1px solid #ddd', background: theme === 'dark' ? '#23272f' : '#fff', color: theme === 'dark' ? '#fff' : '#222'}} />
+          <button onClick={() => handleSearch(searchQuery)} style={{marginLeft: 8, padding: '8px 12px', background: '#409eff', color: '#fff', border: 'none', borderRadius: 4}}>🔍</button>
+        </div>
+        {/* 分界线 */}
+        <div style={{height: 1, background: '#eee', margin: '0 24px'}} />
+        {/* 所有笔记标题及AI标签 */}
+        <div style={{flex: 1, overflowY: 'auto', padding: '16px 0'}}>
+          <div style={{padding: '0 24px', fontWeight: 'bold', fontSize: 16, marginBottom: 8}}>所有笔记</div>
+          <ul style={{listStyle: 'none', padding: 0, margin: 0}}>
             {(searchQuery ? searchResults : notes)
-              .filter(note => !selectedFolder || note.folder_id === selectedFolder.id)
+              .filter(note => !selectedFolder || note.folder_id === selectedFolder?.id)
+              .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
               .map(note => (
-              <li
-                key={note.id}
-                style={{
-                  marginBottom: 12,
-                  padding: 8,
-                  borderRadius: 6,
-                  background: selectedNote && selectedNote.id === note.id ? "#ecf5ff" : "#f9f9f9",
-                  cursor: "pointer",
-                  border: "1px solid #eee"
-                }}
-                onClick={() => {
-                  setSelectedNote(note);
-                  setDetailSummary("");
-                  setDetailKeywords("");
-                  setDetailMsg("");
-                }}
-              >
-                <div style={{fontWeight: "bold", color: "#222"}}>
-                  {searchQuery ? highlightText(note.title, searchQuery) : note.title}
-                </div>
-                {/* 显示文件夹信息 */}
-                {note.folder_name && (
-                  <div style={{
-                    fontSize: 11,
-                    color: "#67c23a",
-                    marginBottom: 4,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 4
-                  }}>
-                    📁 {note.folder_name}
-                  </div>
-                )}
-                <div style={{fontSize: 13, color: "#888", margin: "4px 0"}}>
-                  {searchQuery ? highlightText(note.content.slice(0, 50), searchQuery) : note.content.slice(0, 30)}
-                  {note.content.length > 30 ? "..." : ""}
-                </div>
-                {/* 显示标签 */}
-                {note.tags && note.tags.length > 0 && (
-                  <div style={{marginTop: 4, display: "flex", flexWrap: "wrap", gap: 4}}>
-                    {note.tags.map((tag, index) => (
-                      <span
-                        key={index}
-                        style={{
-                          fontSize: 10,
-                          padding: "2px 6px",
-                          borderRadius: 10,
-                          background: "#409eff",
-                          color: "#fff"
-                        }}
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {searchQuery && note.score && (
-                  <div style={{fontSize: 11, color: "#409eff"}}>
-                    相关度: {(note.score * 100).toFixed(1)}%
-                  </div>
-                )}
-                <div style={{marginTop: 4}}>
-                  <button onClick={e => {e.stopPropagation(); handleDeleteNote(note.id);}} style={{color: "#f56c6c", border: "none", background: "none", cursor: "pointer", fontSize: 13}}>删除</button>
-                  <button onClick={e => {e.stopPropagation(); generateAutoTags(note.id);}} style={{color: "#67c23a", border: "none", background: "none", cursor: "pointer", fontSize: 13, marginLeft: 8}}>自动标签</button>
-                </div>
-              </li>
-            ))}
+                <li key={note.id} style={{marginBottom: 12, padding: 8, borderRadius: 6, background: selectedNote && selectedNote.id === note.id ? (theme === 'dark' ? '#2d3748' : '#ecf5ff') : (theme === 'dark' ? '#23272f' : '#f9f9f9'), cursor: 'pointer', border: '1px solid #eee'}} onClick={() => { setSelectedNote(note); setDetailSummary(''); setDetailKeywords(''); setDetailMsg(''); }}>
+                  <div style={{fontWeight: 'bold', color: theme === 'dark' ? '#fff' : '#222'}}>{searchQuery ? highlightText(note.title, searchQuery) : note.title}</div>
+                  {/* AI标签展示 */}
+                  {note.tags && note.tags.length > 0 && (
+                    <div style={{marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 4}}>
+                      {note.tags.map((tag, idx) => (
+                        <span key={idx} style={{fontSize: 10, padding: '2px 6px', borderRadius: 10, background: '#409eff', color: '#fff'}}>{tag}</span>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{fontSize: 13, color: theme === 'dark' ? '#aaa' : '#888', margin: '4px 0'}}>{searchQuery ? highlightText(note.content.slice(0, 50), searchQuery) : note.content.slice(0, 30)}{note.content.length > 30 ? '...' : ''}</div>
+                  <div style={{fontSize: 11, color: '#aaa'}}>更新时间：{note.updated_at ? new Date(note.updated_at).toLocaleString() : '无'}</div>
+                </li>
+              ))}
           </ul>
         </div>
-        {/* 拖拽分割线 */}
-        <div
-          ref={dividerRef}
-          style={{
-            width: 6,
-            cursor: "col-resize",
-            background: "#eee",
-            zIndex: 2,
-            minWidth: "6px"
-          }}
-          onMouseDown={handleMouseDown}
-        />
-        {/* 右侧AI智能区 */}
-        <div style={{
-          flex: 1,
-          background: "#222",
-          color: "#fff",
-          padding: 40,
-          minHeight: "100vh",
-          minWidth: "400px" // 确保右侧区域最小宽度
-        }}>
-          {selectedNote ? (
-      <div>
-              {isEditing ? (
-                <>
-                  <input
-                    type="text"
-                    value={editTitle}
-                    onChange={e => setEditTitle(e.target.value)}
-                    style={{padding: 8, borderRadius: 4, border: "1px solid #ccc", width: "100%", marginBottom: 8}}
-                  />
-                  <textarea
-                    value={editContent}
-                    onChange={e => setEditContent(e.target.value)}
-                    rows={6}
-                    style={{padding: 8, borderRadius: 4, border: "1px solid #ccc", width: "100%", marginBottom: 8}}
-                  />
-                  <button onClick={handleSaveEdit} style={{marginRight: 8, padding: "6px 16px", background: "#67c23a", color: "#fff", border: "none", borderRadius: 4}}>保存</button>
-                  <button onClick={() => setIsEditing(false)} style={{padding: "6px 16px", background: "#888", color: "#fff", border: "none", borderRadius: 4}}>取消</button>
-                </>
-              ) : (
-                <>
-                  <h2 style={{color: "#fff"}}>{selectedNote.title}</h2>
-                  <div style={{margin: "16px 0", color: "#eee"}}>{selectedNote.content}</div>
-                  <div style={{color: "#aaa", fontSize: 13, marginBottom: 8}}>最后修改时间：{selectedNote.updated_at ? new Date(selectedNote.updated_at).toLocaleString() : "无"}</div>
-                  <button onClick={handleEdit} style={{marginBottom: 16, padding: "6px 16px", background: "#409eff", color: "#fff", border: "none", borderRadius: 4}}>编辑</button>
-                </>
-              )}
-              <div style={{marginBottom: 16}}>
-                <button onClick={handleDetailSummarize} style={{marginRight: 12, padding: "6px 16px", background: "#409eff", color: "#fff", border: "none", borderRadius: 4}}>AI摘要</button>
-                <button onClick={handleDetailKeywords} style={{padding: "6px 16px", background: "#e6a23c", color: "#fff", border: "none", borderRadius: 4}}>关键词提取</button>
-              </div>
-              {detailMsg && <div style={{marginBottom: 8, color: "#ffd04b"}}>{detailMsg}</div>}
-              {detailSummary && <div style={{marginBottom: 8, color: "#b3e19d"}}>摘要：{detailSummary}</div>}
-              {detailKeywords && <div style={{marginBottom: 8, color: "#f7ba2a"}}>关键词：{detailKeywords}</div>}
-              {/* 预留扩展空间 */}
-              <div style={{marginTop: 32}}>
-                <h3 style={{color: "#fff"}}>更多AI功能</h3>
-                <div style={{color: "#aaa", fontSize: 13}}>更多智能功能正在开发中...</div>
-              </div>
-            </div>
-          ) : (
-            <div style={{color: "#aaa", fontSize: 18, textAlign: "center", marginTop: 100}}>点击左侧笔记，体验AI智能功能</div>
-          )}
+        {/* 用户信息栏 */}
+        <div style={{padding: 24, borderTop: '1px solid #eee', display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
+          <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
+            <img src={`https://api.dicebear.com/7.x/identicon/svg?seed=${currentUser}`} alt="avatar" style={{width: 36, height: 36, borderRadius: '50%'}} />
+            <span style={{fontWeight: 'bold'}}>{currentUser}</span>
+          </div>
+          <button style={{background: 'none', border: 'none', color: theme === 'dark' ? '#fff' : '#222', fontSize: 22, cursor: 'pointer'}} onClick={() => setShowChangePwd(true)}>⋮</button>
         </div>
       </div>
-      
-      {/* 文件夹模态框 */}
-      {showFolderModal && (
-        <div style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: "rgba(0,0,0,0.5)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 1000
-        }}>
-          <div style={{
-            background: "#fff",
-            padding: 24,
-            borderRadius: 8,
-            width: 400,
-            maxWidth: "90vw"
-          }}>
-            <h3 style={{margin: "0 0 16px 0", color: "#222"}}>
-              {editingFolder ? "编辑文件夹" : "新建文件夹"}
-            </h3>
-            <div style={{marginBottom: 16}}>
-              <label style={{display: "block", marginBottom: 8, color: "#666"}}>文件夹名称</label>
-              <input
-                type="text"
-                value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
-                placeholder="请输入文件夹名称"
-                style={{
-                  width: "100%",
-                  padding: "8px 12px",
-                  border: "1px solid #ddd",
-                  borderRadius: 4,
-                  fontSize: 14
-                }}
-              />
-            </div>
-            <div style={{marginBottom: 24}}>
-              <label style={{display: "block", marginBottom: 8, color: "#666"}}>文件夹颜色</label>
-              <input
-                type="color"
-                value={newFolderColor}
-                onChange={(e) => setNewFolderColor(e.target.value)}
-                style={{
-                  width: 60,
-                  height: 40,
-                  border: "1px solid #ddd",
-                  borderRadius: 4,
-                  cursor: "pointer"
-                }}
-              />
-            </div>
-            <div style={{display: "flex", gap: 12, justifyContent: "flex-end"}}>
-              <button
-                onClick={() => {
-                  setShowFolderModal(false);
-                  setEditingFolder(null);
-                  setNewFolderName("");
-                  setNewFolderColor("#67c23a");
-                }}
-                style={{
-                  padding: "8px 16px",
-                  background: "#f5f5f5",
-                  color: "#666",
-                  border: "1px solid #ddd",
-                  borderRadius: 4,
-                  cursor: "pointer"
-                }}
-              >
-                取消
-              </button>
-              <button
-                onClick={editingFolder ? updateFolder : createFolder}
-                style={{
-                  padding: "8px 16px",
-                  background: "#67c23a",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: 4,
-                  cursor: "pointer"
-                }}
-              >
-                {editingFolder ? "更新" : "创建"}
-        </button>
-            </div>
-          </div>
-      </div>
-      )}
-
-      {/* 修改密码模态框（提升到最外层） */}
-      {showChangePwd && (
-        <div style={{
-          position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh",
-          background: "rgba(0,0,0,0.3)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000
-        }}>
-          <div style={{
-            background: "#fff", borderRadius: 16, padding: 32, minWidth: 320, boxShadow: "0 4px 24px rgba(0,0,0,0.12)"
-          }}>
-            <h3 style={{ marginBottom: 20, color: "#222" }}>修改密码</h3>
-            <form onSubmit={async (e) => {
-              e.preventDefault();
-              setPwdMsg(""); setPwdMsgType("");
-              if (!oldPwd || !newPwd || !confirmPwd || (!currentUser && !username)) {
-                setPwdMsg("请填写所有字段"); setPwdMsgType("error"); return;
-              }
-              if (newPwd !== confirmPwd) {
-                setPwdMsg("两次新密码不一致"); setPwdMsgType("error"); return;
-              }
-              try {
-                const res = await fetch("http://127.0.0.1:8000/change_password", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    username: currentUser || username,
-                    old_password: oldPwd,
-                    new_password: newPwd
-                  })
-                });
-                const data = await res.json();
-                setPwdMsg(data.msg || "未知错误");
-                setPwdMsgType(data.msgType || "error");
-                if (data.msgType === "success") {
-                  setTimeout(() => {
-                    setShowChangePwd(false);
-                    setCurrentUser(""); // 自动登出
-                    setUsername(""); setPassword("");
-                    setNotes([]); setMsg("密码修改成功，请重新登录"); setMsgType("success");
-                  }, 1500);
-                }
-              } catch {
-                setPwdMsg("网络错误，请重试"); setPwdMsgType("error");
-              }
-            }}>
-              {!currentUser && (
-                <input
-                  type="text"
-                  placeholder="用户名"
-                  value={username}
-                  onChange={e => setUsername(e.target.value)}
-                  style={{ width: "100%", marginBottom: 12, padding: 8, borderRadius: 8, border: "1px solid #ddd" }}
-                />
-              )}
-              <input
-                type="password"
-                placeholder="旧密码"
-                value={oldPwd}
-                onChange={e => setOldPwd(e.target.value)}
-                style={{ width: "100%", marginBottom: 12, padding: 8, borderRadius: 8, border: "1px solid #ddd" }}
-              />
-              <input
-                type="password"
-                placeholder="新密码"
-                value={newPwd}
-                onChange={e => setNewPwd(e.target.value)}
-                style={{ width: "100%", marginBottom: 12, padding: 8, borderRadius: 8, border: "1px solid #ddd" }}
-              />
-              <input
-                type="password"
-                placeholder="确认新密码"
-                value={confirmPwd}
-                onChange={e => setConfirmPwd(e.target.value)}
-                style={{ width: "100%", marginBottom: 12, padding: 8, borderRadius: 8, border: "1px solid #ddd" }}
-              />
-              <div style={{
-                marginBottom: 12, color: pwdMsgType === "success" ? "#67c23a" : "#f56c6c", minHeight: 20, textAlign: "center"
-              }}>{pwdMsg}</div>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <button type="submit" style={{
-                  padding: "8px 24px", background: "#409eff", color: "#fff", border: "none", borderRadius: 8
-                }}>提交</button>
-                <button type="button" onClick={() => setShowChangePwd(false)} style={{
-                  padding: "8px 24px", background: "#888", color: "#fff", border: "none", borderRadius: 8
-                }}>取消</button>
+      {/* 拖拽分割线 */}
+      <div ref={dividerRef} style={{width: 6, cursor: 'col-resize', background: '#eee', zIndex: 2, minWidth: '6px'}} onMouseDown={handleMouseDown} />
+      {/* 右侧AI笔记区 */}
+      <div style={{flex: 1, background: theme === 'dark' ? '#181c23' : '#f5f6fa', color: theme === 'dark' ? '#fff' : '#222', padding: 40, minHeight: '100vh', minWidth: '400px'}}>
+        {/* 主题切换按钮 */}
+        <button onClick={toggleTheme} style={{position: 'absolute', top: 24, right: 48, zIndex: 10, background: 'none', border: 'none', fontSize: 22, color: theme === 'dark' ? '#fff' : '#222', cursor: 'pointer'}}>{theme === 'dark' ? '🌙' : '☀️'}</button>
+        {/* 新建/编辑/查看笔记区 */}
+        {!selectedNote ? (
+          <div style={{maxWidth: 700, margin: '0 auto', marginTop: 80, background: theme === 'dark' ? '#23272f' : '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: 40}}>
+            <h2 style={{marginBottom: 24, color: theme === 'dark' ? '#fff' : '#222'}}>创建新笔记</h2>
+            <form onSubmit={handleAddNote}>
+              <input type="text" placeholder="标题" value={noteTitle} onChange={e => setNoteTitle(e.target.value)} required style={{width: '100%', padding: 12, borderRadius: 6, border: '1px solid #ddd', marginBottom: 16, fontSize: 18, background: theme === 'dark' ? '#23272f' : '#fff', color: theme === 'dark' ? '#fff' : '#222'}} />
+              <textarea placeholder="内容 (支持Markdown)" value={noteContent} onChange={e => setNoteContent(e.target.value)} required rows={8} style={{width: '100%', padding: 12, borderRadius: 6, border: '1px solid #ddd', marginBottom: 16, fontSize: 16, background: theme === 'dark' ? '#23272f' : '#fff', color: theme === 'dark' ? '#fff' : '#222'}} />
+              <div style={{marginBottom: 16, background: theme === 'dark' ? '#181c23' : '#f9f9f9', borderRadius: 8, padding: 12}}>
+                <div style={{fontWeight: 'bold', marginBottom: 8}}>Markdown 预览：</div>
+                <ReactMarkdown>{noteContent}</ReactMarkdown>
               </div>
+              <button type="submit" style={{padding: '10px 32px', background: '#67c23a', color: '#fff', border: 'none', borderRadius: 6, fontSize: 16}}>添加</button>
             </form>
           </div>
-        </div>
-      )}
-    </>
-    );
-  }
+        ) : (
+          <div style={{maxWidth: 800, margin: '0 auto', marginTop: 40, background: theme === 'dark' ? '#23272f' : '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: 40}}>
+            {isEditing ? (
+              <>
+                <input type="text" value={editTitle} onChange={e => setEditTitle(e.target.value)} style={{padding: 8, borderRadius: 4, border: '1px solid #ccc', width: '100%', marginBottom: 8, background: theme === 'dark' ? '#23272f' : '#fff', color: theme === 'dark' ? '#fff' : '#222'}} />
+                <textarea value={editContent} onChange={e => setEditContent(e.target.value)} rows={8} style={{padding: 8, borderRadius: 4, border: '1px solid #ccc', width: '100%', marginBottom: 8, background: theme === 'dark' ? '#23272f' : '#fff', color: theme === 'dark' ? '#fff' : '#222'}} />
+                <button onClick={handleSaveEdit} style={{marginRight: 8, padding: '6px 16px', background: '#67c23a', color: '#fff', border: 'none', borderRadius: 4}}>保存</button>
+                <button onClick={() => setIsEditing(false)} style={{marginRight: 8, padding: '6px 16px', background: '#888', color: '#fff', border: 'none', borderRadius: 4}}>取消</button>
+                <button onClick={() => { if(window.confirm('确定要删除该笔记吗？')) handleDeleteNote(selectedNote.id); }} style={{padding: '6px 16px', background: '#f56c6c', color: '#fff', border: 'none', borderRadius: 4}}>删除</button>
+              </>
+            ) : (
+              <>
+                <h2 style={{color: theme === 'dark' ? '#fff' : '#222'}}>{selectedNote.title}</h2>
+                {/* markdown预览 */}
+                <div style={{margin: '16px 0', color: theme === 'dark' ? '#eee' : '#222'}}><ReactMarkdown>{selectedNote.content}</ReactMarkdown></div>
+                <div style={{color: '#aaa', fontSize: 13, marginBottom: 8}}>最后修改时间：{selectedNote.updated_at ? new Date(selectedNote.updated_at).toLocaleString() : '无'}</div>
+                <button onClick={handleEdit} style={{marginBottom: 16, padding: '6px 16px', background: '#409eff', color: '#fff', border: 'none', borderRadius: 4}}>编辑</button>
+              </>
+            )}
+            {/* AI标签按钮和展示 */}
+            <div style={{marginBottom: 16}}>
+              <button onClick={() => handleGetAiTags(selectedNote.id, selectedNote.content)} style={{padding: '6px 16px', background: '#e6a23c', color: '#fff', border: 'none', borderRadius: 4, marginRight: 12}}>AI标签</button>
+              <button onClick={() => handleDetailSummarize()} style={{padding: '6px 16px', background: '#409eff', color: '#fff', border: 'none', borderRadius: 4}}>AI摘要</button>
+              {aiTags[selectedNote.id] && aiTags[selectedNote.id].length > 0 && (
+                <div style={{marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4}}>
+                  {aiTags[selectedNote.id].map((tag, idx) => (
+                    <span key={idx} style={{fontSize: 12, padding: '2px 8px', borderRadius: 10, background: '#409eff', color: '#fff'}}>{tag}</span>
+                  ))}
+                </div>
+              )}
+              {detailSummary && <div style={{marginTop: 8, color: '#b3e19d'}}>摘要：{detailSummary}</div>}
+            </div>
+            {detailMsg && <div style={{marginBottom: 8, color: '#ffd04b'}}>{detailMsg}</div>}
+            {/* 预留扩展空间 */}
+            <div style={{marginTop: 32}}>
+              <h3 style={{color: theme === 'dark' ? '#fff' : '#222'}}>更多AI功能</h3>
+              <div style={{color: '#aaa', fontSize: 13}}>更多智能功能正在开发中...</div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
-
+}
 export default App;
